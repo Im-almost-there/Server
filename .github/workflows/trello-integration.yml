@@ -40,7 +40,7 @@ jobs:
           ISSUE_TITLE=$(echo "$ISSUE_DATA" | jq -r '.title')
           ISSUE_BODY=$(echo "$ISSUE_DATA" | jq -r '.body // ""')
           
-          # 이슈 본문에서 Trello 카드 ID 찾기 (Trello-Card-ID: 또는 trello.com/c/ 패턴)
+          # 이슈 본문에서 Trello 카드 ID 찾기 (여러 패턴 지원)
           TRELLO_CARD_ID=""
           
           # 패턴 1: Trello-Card-ID: 12345678
@@ -49,6 +49,16 @@ jobs:
           # 패턴 2: https://trello.com/c/abcd1234/
           if [ -z "$TRELLO_CARD_ID" ]; then
             TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "trello\.com/c/([a-zA-Z0-9]+)" | sed 's/.*trello\.com\/c\///' | cut -d'/' -f1)
+          fi
+          
+          # 패턴 3: 템플릿 형식 (📋 Trello 카드 연결 섹션)
+          if [ -z "$TRELLO_CARD_ID" ]; then
+            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -A2 "📋 Trello 카드" | grep -oE "([a-zA-Z0-9]{24}|trello\.com/c/[a-zA-Z0-9]+)" | sed 's/.*trello\.com\/c\///' | cut -d'/' -f1)
+          fi
+          
+          # 패턴 4: 단순히 24자리 Trello ID만 있는 경우
+          if [ -z "$TRELLO_CARD_ID" ]; then
+            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "\b[a-zA-Z0-9]{24}\b" | head -1)
           fi
           
           if [ -n "$TRELLO_CARD_ID" ]; then
@@ -67,10 +77,9 @@ jobs:
             **작성자**: ${{ github.actor }}"
             
             curl -X POST \
-              -H "Authorization: OAuth oauth_consumer_key=\"$TRELLO_API_KEY\", oauth_token=\"$TRELLO_TOKEN\"" \
               -H "Content-Type: application/json" \
-              -d "{\"text\":\"$COMMENT_TEXT\"}" \
-              "https://api.trello.com/1/cards/$TRELLO_CARD_ID/actions/comments"
+              "https://api.trello.com/1/cards/$TRELLO_CARD_ID/actions/comments?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN" \
+              -d "{\"text\":\"$COMMENT_TEXT\"}"
               
             echo "Added commit info to Trello card $TRELLO_CARD_ID"
           else
@@ -115,7 +124,7 @@ jobs:
             
             ISSUE_BODY=$(echo "$ISSUE_DATA" | jq -r '.body // ""')
             
-            # Trello 카드 ID 찾기
+            # Trello 카드 ID 찾기 (여러 패턴 지원)
             TRELLO_CARD_ID=""
             TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "Trello-Card-ID:\s*([a-zA-Z0-9]+)" | sed 's/Trello-Card-ID:\s*//')
             
@@ -123,13 +132,22 @@ jobs:
               TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "trello\.com/c/([a-zA-Z0-9]+)" | sed 's/.*trello\.com\/c\///' | cut -d'/' -f1)
             fi
             
+            # 템플릿 형식에서 추출
+            if [ -z "$TRELLO_CARD_ID" ]; then
+              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -A2 "📋 Trello 카드" | grep -oE "([a-zA-Z0-9]{24}|trello\.com/c/[a-zA-Z0-9]+)" | sed 's/.*trello\.com\/c\///' | cut -d'/' -f1)
+            fi
+            
+            # 단순 ID 패턴
+            if [ -z "$TRELLO_CARD_ID" ]; then
+              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "\b[a-zA-Z0-9]{24}\b" | head -1)
+            fi
+            
             if [ -n "$TRELLO_CARD_ID" ]; then
               echo "Moving Trello card $TRELLO_CARD_ID to Code Review"
               
               # 카드를 Code Review 리스트로 이동
               curl -X PUT \
-                -H "Authorization: OAuth oauth_consumer_key=\"$TRELLO_API_KEY\", oauth_token=\"$TRELLO_TOKEN\"" \
-                "https://api.trello.com/1/cards/$TRELLO_CARD_ID?idList=$TRELLO_CODE_REVIEW_LIST_ID"
+                "https://api.trello.com/1/cards/$TRELLO_CARD_ID?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN&idList=$TRELLO_CODE_REVIEW_LIST_ID"
               
               # PR 정보를 카드에 댓글로 추가
               COMMENT_TEXT="**Pull Request 생성됨**
@@ -139,10 +157,9 @@ jobs:
               **브랜치**: ${{ github.head_ref }} → ${{ github.base_ref }}"
               
               curl -X POST \
-                -H "Authorization: OAuth oauth_consumer_key=\"$TRELLO_API_KEY\", oauth_token=\"$TRELLO_TOKEN\"" \
                 -H "Content-Type: application/json" \
-                -d "{\"text\":\"$COMMENT_TEXT\"}" \
-                "https://api.trello.com/1/cards/$TRELLO_CARD_ID/actions/comments"
+                "https://api.trello.com/1/cards/$TRELLO_CARD_ID/actions/comments?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN" \
+                -d "{\"text\":\"$COMMENT_TEXT\"}"
               
               echo "Moved card to Code Review and added PR info"
             fi
@@ -181,7 +198,7 @@ jobs:
             
             ISSUE_BODY=$(echo "$ISSUE_DATA" | jq -r '.body // ""')
             
-            # Trello 카드 ID 찾기
+            # Trello 카드 ID 찾기 (여러 패턴 지원)
             TRELLO_CARD_ID=""
             TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "Trello-Card-ID:\s*([a-zA-Z0-9]+)" | sed 's/Trello-Card-ID:\s*//')
             
@@ -189,13 +206,22 @@ jobs:
               TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "trello\.com/c/([a-zA-Z0-9]+)" | sed 's/.*trello\.com\/c\///' | cut -d'/' -f1)
             fi
             
+            # 템플릿 형식에서 추출
+            if [ -z "$TRELLO_CARD_ID" ]; then
+              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -A2 "📋 Trello 카드" | grep -oE "([a-zA-Z0-9]{24}|trello\.com/c/[a-zA-Z0-9]+)" | sed 's/.*trello\.com\/c\///' | cut -d'/' -f1)
+            fi
+            
+            # 단순 ID 패턴
+            if [ -z "$TRELLO_CARD_ID" ]; then
+              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "\b[a-zA-Z0-9]{24}\b" | head -1)
+            fi
+            
             if [ -n "$TRELLO_CARD_ID" ]; then
               echo "Moving Trello card $TRELLO_CARD_ID to Done"
               
               # 카드를 Done 리스트로 이동
               curl -X PUT \
-                -H "Authorization: OAuth oauth_consumer_key=\"$TRELLO_API_KEY\", oauth_token=\"$TRELLO_TOKEN\"" \
-                "https://api.trello.com/1/cards/$TRELLO_CARD_ID?idList=$TRELLO_DONE_LIST_ID"
+                "https://api.trello.com/1/cards/$TRELLO_CARD_ID?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN&idList=$TRELLO_DONE_LIST_ID"
               
               # 완료 정보를 카드에 댓글로 추가
               COMMENT_TEXT="✅ **Pull Request 머지 완료**
@@ -205,10 +231,9 @@ jobs:
               **완료 시간**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
               
               curl -X POST \
-                -H "Authorization: OAuth oauth_consumer_key=\"$TRELLO_API_KEY\", oauth_token=\"$TRELLO_TOKEN\"" \
                 -H "Content-Type: application/json" \
-                -d "{\"text\":\"$COMMENT_TEXT\"}" \
-                "https://api.trello.com/1/cards/$TRELLO_CARD_ID/actions/comments"
+                "https://api.trello.com/1/cards/$TRELLO_CARD_ID/actions/comments?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN" \
+                -d "{\"text\":\"$COMMENT_TEXT\"}"
               
               echo "Moved card to Done and added completion info"
             fi

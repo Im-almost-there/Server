@@ -201,10 +201,23 @@ jobs:
             echo "Processing issue #$ISSUE_NUM for merged PR"
             
             # 이슈 정보 가져오기
-            ISSUE_DATA=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            echo "Fetching issue #$ISSUE_NUM from GitHub API..."
+            ISSUE_DATA=$(curl -s -w "\n%{http_code}" -H "Authorization: token $GITHUB_TOKEN" \
               "https://api.github.com/repos/${{ github.repository }}/issues/$ISSUE_NUM")
-            
-            ISSUE_BODY=$(echo "$ISSUE_DATA" | jq -r '.body // ""')
+
+            HTTP_CODE=$(echo "$ISSUE_DATA" | tail -n1)
+            RESPONSE_BODY=$(echo "$ISSUE_DATA" | head -n -1)
+
+            echo "GitHub API Response Code: $HTTP_CODE"
+            echo "Response preview: $(echo "$RESPONSE_BODY" | head -c 200)..."
+
+            if [ "$HTTP_CODE" != "200" ]; then
+              echo "❌ Failed to fetch issue #$ISSUE_NUM from GitHub API"
+              continue
+            fi
+
+            ISSUE_BODY=$(echo "$RESPONSE_BODY" | jq -r '.body // ""')
+            echo "Issue body preview: $(echo "$ISSUE_BODY" | head -c 100)..."
             
             # Trello 카드 ID 찾기 (여러 패턴 지원)
             TRELLO_CARD_ID=""

@@ -1,3 +1,4 @@
+# .github/workflows/trello-integration.yml
 name: Trello Integration
 
 on:
@@ -7,7 +8,7 @@ on:
     types: [opened, closed]
 
 jobs:
-  # 커밋에 이슈 번호가 있으면 Trello 카드에 커밋 정보 추가
+  # 2. 커밋에 이슈 번호가 있으면 Trello 카드에 커밋 정보 추가
   commit-to-trello:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -69,25 +70,39 @@ jobs:
             COMMIT_SHORT_SHA="${{ github.sha }}"
             COMMIT_SHORT_SHA="${COMMIT_SHORT_SHA:0:7}"
             
-            COMMENT_TEXT="**Commit 추가됨**
+            COMMENT_TEXT="🔧 **커밋 연결됨**
             
             **커밋**: [\`$COMMIT_SHORT_SHA\`]($COMMIT_URL)
             **메시지**: $COMMIT_MSG
             **브랜치**: ${{ github.ref_name }}
             **작성자**: ${{ github.actor }}"
             
-            curl -X POST \
+            echo "Calling Trello API with card ID: $TRELLO_CARD_ID"
+            echo "API URL: https://api.trello.com/1/cards/$TRELLO_CARD_ID/actions/comments?key=***&token=***"
+            
+            RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
               -H "Content-Type: application/json" \
               "https://api.trello.com/1/cards/$TRELLO_CARD_ID/actions/comments?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN" \
-              -d "{\"text\":\"$COMMENT_TEXT\"}"
-              
-            echo "Added commit info to Trello card $TRELLO_CARD_ID"
+              -d "{\"text\":\"$COMMENT_TEXT\"}")
+            
+            HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+            RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
+            
+            echo "HTTP Response Code: $HTTP_CODE"
+            echo "Response Body: $RESPONSE_BODY"
+            
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Successfully added commit info to Trello card $TRELLO_CARD_ID"
+            else
+              echo "❌ Failed to add comment to Trello card"
+              echo "Error details: $RESPONSE_BODY"
+            fi
           else
             echo "No Trello Card ID found in issue #$ISSUE_NUM"
           fi
         done
 
-  # PR 생성시 Code Review 리스트로 이동
+  # 3. PR 생성시 Code Review 리스트로 이동
   pr-to-review:
     if: github.event.action == 'opened'
     runs-on: ubuntu-latest
@@ -150,7 +165,7 @@ jobs:
                 "https://api.trello.com/1/cards/$TRELLO_CARD_ID?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN&idList=$TRELLO_CODE_REVIEW_LIST_ID"
               
               # PR 정보를 카드에 댓글로 추가
-              COMMENT_TEXT="**Pull Request 생성됨**
+              COMMENT_TEXT="📋 **Pull Request 생성됨**
               
               **PR**: [$PR_TITLE]($PR_URL)
               **작성자**: ${{ github.actor }}
@@ -166,7 +181,7 @@ jobs:
           fi
         done
 
-  # PR 머지시 Done 리스트로 이동
+  # 4. PR 머지시 Done 리스트로 이동
   pr-to-done:
     if: github.event.action == 'closed' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest

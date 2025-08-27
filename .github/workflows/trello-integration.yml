@@ -78,10 +78,10 @@ jobs:
             
             COMMENT_TEXT="🔧 **커밋 연결됨**
 
-            **커밋**: [\`$COMMIT_SHORT_SHA\`]($COMMIT_URL)
-            **메시지**: $COMMIT_MSG_ONELINE
-            **브랜치**: ${{ github.ref_name }}
-            **작성자**: ${{ github.actor }}"
+**커밋**: [\`$COMMIT_SHORT_SHA\`]($COMMIT_URL)
+**메시지**: $COMMIT_MSG_ONELINE
+**브랜치**: ${{ github.ref_name }}
+**작성자**: ${{ github.actor }}"
             
             echo "Calling Trello API with card ID: $TRELLO_CARD_ID"
             echo "API URL: https://api.trello.com/1/cards/$TRELLO_CARD_ID/actions/comments?key=***&token=***"

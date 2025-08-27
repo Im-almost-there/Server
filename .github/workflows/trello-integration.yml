@@ -23,71 +23,56 @@ jobs:
         TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        # 커밋 메시지에서 #이슈번호 추출 (전체 커밋 메시지, 여러 줄 지원)
         COMMIT_MSG=$(git log -1 --pretty=format:"%B")
         echo "Full commit message: $COMMIT_MSG"
         
-        # #숫자 패턴 찾기 (여러 줄에서)
         ISSUE_NUMBERS=$(echo "$COMMIT_MSG" | grep -oE '#[0-9]+' | sed 's/#//')
-        
+
         for ISSUE_NUM in $ISSUE_NUMBERS; do
           echo "Processing issue #$ISSUE_NUM"
-          
-          # GitHub API로 이슈 정보 가져오기
           ISSUE_DATA=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
             "https://api.github.com/repos/${{ github.repository }}/issues/$ISSUE_NUM")
           
-          ISSUE_TITLE=$(echo "$ISSUE_DATA" | jq -r '.title')
           ISSUE_BODY=$(echo "$ISSUE_DATA" | jq -r '.body // ""')
-          
-          # 이슈 본문에서 Trello 카드 ID 찾기 (여러 패턴 지원)
+
           TRELLO_CARD_ID=""
+          TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "Trello-Card-ID:[[:space:]]*([a-zA-Z0-9]+)" | sed 's/Trello-Card-ID:[[:space:]]*//')
           
-          # 패턴 1: Trello-Card-ID: 12345678
-          TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "Trello-Card-ID:\s*([a-zA-Z0-9]+)" | sed 's/Trello-Card-ID:\s*//')
-          
-          # 패턴 2: https://trello.com/c/abcd1234/
           if [ -z "$TRELLO_CARD_ID" ]; then
             TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "trello\.com/c/([a-zA-Z0-9]+)" | sed 's/.*trello\.com\/c\///' | cut -d'/' -f1)
           fi
           
-          # 패턴 3: 템플릿의 📋 Trello 카드 연결 필드에서 8자리 또는 24자리 ID 찾기
           if [ -z "$TRELLO_CARD_ID" ]; then
-            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -A5 "📋 Trello 카드 연결" | grep -oE "\b[a-zA-Z0-9]{8,24}\b" | head -1)
+            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -A5 "📋 Trello 카드 연결" | grep -oE "[a-zA-Z0-9]{8,24}" | head -1)
           fi
           
-          # 패턴 4: 단순히 8자리 shortLink 또는 24자리 ID만 있는 경우
           if [ -z "$TRELLO_CARD_ID" ]; then
-            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "\b[a-zA-Z0-9]{8}\b|\b[a-zA-Z0-9]{24}\b" | head -1)
+            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "[a-zA-Z0-9]{8}|[a-zA-Z0-9]{24}" | head -1)
           fi
-          
+
           echo "Debug - Issue body excerpt:"
           echo "$ISSUE_BODY" | head -10
-          
+
           if [ -n "$TRELLO_CARD_ID" ]; then
             echo "Found Trello Card ID: $TRELLO_CARD_ID"
             
-            # Trello 카드에 커밋 정보 댓글 추가
             COMMIT_URL="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
-            COMMIT_SHORT_SHA="${{ github.sha }}"
-            COMMIT_SHORT_SHA="${COMMIT_SHORT_SHA:0:7}"
-            
+
             COMMENT_TEXT="커밋: $COMMIT_URL"
-            
+
             echo "Calling Trello API with card ID: $TRELLO_CARD_ID"
-            echo "API URL: https://api.trello.com/1/cards/$TRELLO_CARD_ID/actions/comments?key=***&token=***"
-            
+
             RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
               -H "Content-Type: application/json" \
               "https://api.trello.com/1/cards/$TRELLO_CARD_ID/actions/comments?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN" \
               -d "{\"text\":\"$COMMENT_TEXT\"}")
-            
+
             HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
             RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
-            
+
             echo "HTTP Response Code: $HTTP_CODE"
             echo "Response Body: $RESPONSE_BODY"
-            
+
             if [ "$HTTP_CODE" = "200" ]; then
               echo "✅ Successfully added commit info to Trello card $TRELLO_CARD_ID"
             else
@@ -98,6 +83,7 @@ jobs:
             echo "No Trello Card ID found in issue #$ISSUE_NUM"
           fi
         done
+
 
   # 3. PR 생성시 Code Review 리스트로 이동
   pr-to-review:
@@ -118,10 +104,8 @@ jobs:
         
         echo "PR Body: $PR_BODY"
         
-        # PR 본문에서 이슈 번호 추출 (closes #123, fixes #456 등)
         ISSUE_NUMBERS=$(echo "$PR_BODY" | grep -oiE "(closes?|fixes?|resolves?) #([0-9]+)" | grep -oE "#[0-9]+" | sed 's/#//')
         
-        # PR 제목에서도 이슈 번호 찾기
         TITLE_ISSUES=$(echo "$PR_TITLE" | grep -oE '#[0-9]+' | sed 's/#//')
         
         ALL_ISSUES="$ISSUE_NUMBERS $TITLE_ISSUES"
@@ -130,46 +114,40 @@ jobs:
           if [ -n "$ISSUE_NUM" ]; then
             echo "Processing issue #$ISSUE_NUM for PR"
             
-            # 이슈 정보 가져오기
             ISSUE_DATA=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
               "https://api.github.com/repos/${{ github.repository }}/issues/$ISSUE_NUM")
             
             ISSUE_BODY=$(echo "$ISSUE_DATA" | jq -r '.body // ""')
-            
-            # Trello 카드 ID 찾기 (여러 패턴 지원)
+
             TRELLO_CARD_ID=""
-            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "Trello-Card-ID:\\s*([a-zA-Z0-9]+)" | sed 's/Trello-Card-ID:\\s*//')
+            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "Trello-Card-ID:[[:space:]]*([a-zA-Z0-9]+)" | sed 's/Trello-Card-ID:[[:space:]]*//')
             
             if [ -z "$TRELLO_CARD_ID" ]; then
-              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "trello\\.com/c/([a-zA-Z0-9]+)" | sed 's/.*trello\\.com\\/c\\///' | cut -d'/' -f1)
+              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "trello\.com/c/([a-zA-Z0-9]+)" | sed 's/.*trello\.com\/c\///' | cut -d'/' -f1)
             fi
             
             if [ -z "$TRELLO_CARD_ID" ]; then
-              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -A2 "📋 Trello 카드" | grep -oE "([a-zA-Z0-9]{24}|trello\\.com/c/[a-zA-Z0-9]+)" | sed 's/.*trello\\.com\\/c\\///' | cut -d'/' -f1)
+              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -A5 "📋 Trello 카드 연결" | grep -oE "[a-zA-Z0-9]{8,24}" | head -1)
             fi
             
             if [ -z "$TRELLO_CARD_ID" ]; then
-              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "\\b[a-zA-Z0-9]{24}\\b" | head -1)
+              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "[a-zA-Z0-9]{8}|[a-zA-Z0-9]{24}" | head -1)
             fi
 
-            # 카드 ID 추출 결과 출력 추가
             echo "Found Trello Card ID: $TRELLO_CARD_ID"
-
+              
             if [ -n "$TRELLO_CARD_ID" ]; then
               echo "Moving Trello card $TRELLO_CARD_ID to Code Review"
               
-              # 카드 이동 API 호출 및 응답 저장
               RESPONSE=$(curl -s -w "\n%{http_code}" -X PUT \
                 "https://api.trello.com/1/cards/$TRELLO_CARD_ID?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN&idList=$TRELLO_CODE_REVIEW_LIST_ID")
               
               HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
               RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
 
-              # API 호출 결과 출력 추가
               echo "Move card response code: $HTTP_CODE"
               echo "Move card response body: $RESPONSE_BODY"
-
-              # PR 정보 카드에 댓글로 추가
+              
               COMMENT_TEXT="PR: $PR_URL"
               
               curl -X POST \
@@ -183,7 +161,6 @@ jobs:
             fi
           fi
         done
-
 
   # 4. PR 머지시 Done 리스트로 이동
   pr-to-done:
@@ -201,7 +178,6 @@ jobs:
         PR_TITLE="${{ github.event.pull_request.title }}"
         PR_URL="${{ github.event.pull_request.html_url }}"
         
-        # PR에서 이슈 번호 추출
         ISSUE_NUMBERS=$(echo "$PR_BODY" | grep -oiE "(closes?|fixes?|resolves?) #([0-9]+)" | grep -oE "#[0-9]+" | sed 's/#//')
         TITLE_ISSUES=$(echo "$PR_TITLE" | grep -oE '#[0-9]+' | sed 's/#//')
         
@@ -210,9 +186,6 @@ jobs:
         for ISSUE_NUM in $ALL_ISSUES; do
           if [ -n "$ISSUE_NUM" ]; then
             echo "Processing issue #$ISSUE_NUM for merged PR"
-            
-            # 이슈 정보 가져오기
-            echo "Fetching issue #$ISSUE_NUM from GitHub API..."
             ISSUE_DATA=$(curl -s -w "\n%{http_code}" -H "Authorization: token $GITHUB_TOKEN" \
               "https://api.github.com/repos/${{ github.repository }}/issues/$ISSUE_NUM")
 
@@ -229,44 +202,35 @@ jobs:
 
             ISSUE_BODY=$(echo "$RESPONSE_BODY" | jq -r '.body // ""')
             echo "Issue body preview: $(echo "$ISSUE_BODY" | head -c 100)..."
-            
-            # Trello 카드 ID 찾기 (여러 패턴 지원)
-            TRELLO_CARD_ID=""
 
-            # 패턴 1: Trello-Card-ID: 12345678 (공백 부분 POSIX 문자 클래스로 수정)
+            TRELLO_CARD_ID=""
             TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "Trello-Card-ID:[[:space:]]*([a-zA-Z0-9]+)" | sed 's/Trello-Card-ID:[[:space:]]*//')
 
-            # 패턴 2: 링크에서 카드 ID 추출 (과도한 이스케이프 제거)
             if [ -z "$TRELLO_CARD_ID" ]; then
               TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "trello\.com/c/([a-zA-Z0-9]+)" | sed 's/.*trello\.com\/c\///' | cut -d'/' -f1)
             fi
 
-            # 패턴 3: 템플릿 필드에서 카드 ID 추출 (이스케이프 제거)
             if [ -z "$TRELLO_CARD_ID" ]; then
-              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -A5 "📋 Trello 카드 연결" | grep -oE "[a-zA-Z0-9]{8,24}" | head -1)
+              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -A2 "📋 Trello 카드" | grep -oE "[a-zA-Z0-9]{8,24}" | head -1)
             fi
 
-            # 패턴 4: 단순 8자리 또는 24자리 카드 ID 추출
             if [ -z "$TRELLO_CARD_ID" ]; then
-              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "[a-zA-Z0-9]{8}|[a-zA-Z0-9]{24}" | head -1)
+              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "[a-zA-Z0-9]{24}" | head -1)
             fi
 
-            
             if [ -n "$TRELLO_CARD_ID" ]; then
               echo "Moving Trello card $TRELLO_CARD_ID to Done"
               
-              # 카드를 Done 리스트로 이동
               curl -X PUT \
                 "https://api.trello.com/1/cards/$TRELLO_CARD_ID?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN&idList=$TRELLO_DONE_LIST_ID"
-              
-              # 완료 정보를 카드에 댓글로 추가
+
               COMMENT_TEXT="머지: $PR_URL"
               
               curl -X POST \
                 -H "Content-Type: application/json" \
                 "https://api.trello.com/1/cards/$TRELLO_CARD_ID/actions/comments?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN" \
                 -d "{\"text\":\"$COMMENT_TEXT\"}"
-              
+
               echo "Moved card to Done and added completion info"
             fi
           fi

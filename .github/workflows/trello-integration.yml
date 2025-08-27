@@ -72,34 +72,27 @@ jobs:
             COMMIT_SHORT_SHA="${{ github.sha }}"
             COMMIT_SHORT_SHA="${COMMIT_SHORT_SHA:0:7}"
             
-            # 커밋 메시지를 한 줄로 변환
-            COMMIT_MSG_CLEAN=$(echo "$COMMIT_MSG" | tr '\n' ' ' | tr -d '"' | sed 's/  */ /g' | sed 's/^ *//;s/ *$//')
-            
-            # 댓글 텍스트를 변수로 구성
-            COMMENT_LINE1="커밋 연결됨: [\`$COMMIT_SHORT_SHA\`]($COMMIT_URL)"
-            COMMENT_LINE2="메시지: $COMMIT_MSG_CLEAN"
-            COMMENT_LINE3="브랜치: ${{ github.ref_name }}"
-            COMMENT_LINE4="작성자: ${{ github.actor }}"
-            COMMENT_TEXT="$COMMENT_LINE1\n\n$COMMENT_LINE2\n$COMMENT_LINE3\n$COMMENT_LINE4"
+            COMMENT_TEXT="커밋: $COMMIT_URL"
             
             echo "Calling Trello API with card ID: $TRELLO_CARD_ID"
-            
-            # jq를 사용해서 안전하게 JSON 생성
-            JSON_PAYLOAD=$(jq -n --arg text "$COMMENT_TEXT" '{text: $text}')
+            echo "API URL: https://api.trello.com/1/cards/$TRELLO_CARD_ID/actions/comments?key=***&token=***"
             
             RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
               -H "Content-Type: application/json" \
               "https://api.trello.com/1/cards/$TRELLO_CARD_ID/actions/comments?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN" \
-              -d "$JSON_PAYLOAD")
+              -d "{\"text\":\"$COMMENT_TEXT\"}")
             
             HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
             RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
             
             echo "HTTP Response Code: $HTTP_CODE"
+            echo "Response Body: $RESPONSE_BODY"
+            
             if [ "$HTTP_CODE" = "200" ]; then
-              echo "Successfully added commit info to Trello card"
+              echo "✅ Successfully added commit info to Trello card $TRELLO_CARD_ID"
             else
-              echo "Failed to add comment. Response: $RESPONSE_BODY"
+              echo "❌ Failed to add comment to Trello card"
+              echo "Error details: $RESPONSE_BODY"
             fi
           else
             echo "No Trello Card ID found in issue #$ISSUE_NUM"
@@ -169,11 +162,7 @@ jobs:
                 "https://api.trello.com/1/cards/$TRELLO_CARD_ID?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN&idList=$TRELLO_CODE_REVIEW_LIST_ID"
               
               # PR 정보를 카드에 댓글로 추가
-              COMMENT_TEXT="📋 **Pull Request 생성됨**
-              
-              **PR**: [$PR_TITLE]($PR_URL)
-              **작성자**: ${{ github.actor }}
-              **브랜치**: ${{ github.head_ref }} → ${{ github.base_ref }}"
+              COMMENT_TEXT="PR: $PR_URL"
               
               curl -X POST \
                 -H "Content-Type: application/json" \
@@ -243,11 +232,7 @@ jobs:
                 "https://api.trello.com/1/cards/$TRELLO_CARD_ID?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN&idList=$TRELLO_DONE_LIST_ID"
               
               # 완료 정보를 카드에 댓글로 추가
-              COMMENT_TEXT="✅ **Pull Request 머지 완료**
-              
-              **PR**: [$PR_TITLE]($PR_URL)
-              **머지자**: ${{ github.actor }}
-              **완료 시간**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+              COMMENT_TEXT="머지: $PR_URL"
               
               curl -X POST \
                 -H "Content-Type: application/json" \

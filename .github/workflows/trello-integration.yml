@@ -1,0 +1,216 @@
+name: Trello Integration
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    types: [opened, closed]
+
+jobs:
+  # 커밋에 이슈 번호가 있으면 Trello 카드에 커밋 정보 추가
+  commit-to-trello:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 2
+
+    - name: Extract issue numbers and update Trello
+      env:
+        TRELLO_API_KEY: ${{ secrets.TRELLO_API_KEY }}
+        TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # 커밋 메시지에서 #이슈번호 추출
+        COMMIT_MSG=$(git log -1 --pretty=format:"%s")
+        echo "Commit message: $COMMIT_MSG"
+        
+        # #숫자 패턴 찾기
+        ISSUE_NUMBERS=$(echo "$COMMIT_MSG" | grep -oE '#[0-9]+' | sed 's/#//')
+        
+        for ISSUE_NUM in $ISSUE_NUMBERS; do
+          echo "Processing issue #$ISSUE_NUM"
+          
+          # GitHub API로 이슈 정보 가져오기
+          ISSUE_DATA=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/$ISSUE_NUM")
+          
+          ISSUE_TITLE=$(echo "$ISSUE_DATA" | jq -r '.title')
+          ISSUE_BODY=$(echo "$ISSUE_DATA" | jq -r '.body // ""')
+          
+          # 이슈 본문에서 Trello 카드 ID 찾기 (Trello-Card-ID: 또는 trello.com/c/ 패턴)
+          TRELLO_CARD_ID=""
+          
+          # 패턴 1: Trello-Card-ID: 12345678
+          TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "Trello-Card-ID:\s*([a-zA-Z0-9]+)" | sed 's/Trello-Card-ID:\s*//')
+          
+          # 패턴 2: https://trello.com/c/abcd1234/
+          if [ -z "$TRELLO_CARD_ID" ]; then
+            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "trello\.com/c/([a-zA-Z0-9]+)" | sed 's/.*trello\.com\/c\///' | cut -d'/' -f1)
+          fi
+          
+          if [ -n "$TRELLO_CARD_ID" ]; then
+            echo "Found Trello Card ID: $TRELLO_CARD_ID"
+            
+            # Trello 카드에 커밋 정보 댓글 추가
+            COMMIT_URL="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
+            COMMIT_SHORT_SHA="${{ github.sha }}"
+            COMMIT_SHORT_SHA="${COMMIT_SHORT_SHA:0:7}"
+            
+            COMMENT_TEXT="**Commit 추가됨**
+            
+            **커밋**: [\`$COMMIT_SHORT_SHA\`]($COMMIT_URL)
+            **메시지**: $COMMIT_MSG
+            **브랜치**: ${{ github.ref_name }}
+            **작성자**: ${{ github.actor }}"
+            
+            curl -X POST \
+              -H "Authorization: OAuth oauth_consumer_key=\"$TRELLO_API_KEY\", oauth_token=\"$TRELLO_TOKEN\"" \
+              -H "Content-Type: application/json" \
+              -d "{\"text\":\"$COMMENT_TEXT\"}" \
+              "https://api.trello.com/1/cards/$TRELLO_CARD_ID/actions/comments"
+              
+            echo "Added commit info to Trello card $TRELLO_CARD_ID"
+          else
+            echo "No Trello Card ID found in issue #$ISSUE_NUM"
+          fi
+        done
+
+  # PR 생성시 Code Review 리스트로 이동
+  pr-to-review:
+    if: github.event.action == 'opened'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Move Trello card to Code Review
+      env:
+        TRELLO_API_KEY: ${{ secrets.TRELLO_API_KEY }}
+        TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
+        TRELLO_BOARD_ID: ${{ secrets.TRELLO_BOARD_ID }}
+        TRELLO_CODE_REVIEW_LIST_ID: ${{ secrets.TRELLO_CODE_REVIEW_LIST_ID }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        PR_BODY="${{ github.event.pull_request.body }}"
+        PR_TITLE="${{ github.event.pull_request.title }}"
+        PR_URL="${{ github.event.pull_request.html_url }}"
+        
+        echo "PR Body: $PR_BODY"
+        
+        # PR 본문에서 이슈 번호 추출 (closes #123, fixes #456 등)
+        ISSUE_NUMBERS=$(echo "$PR_BODY" | grep -oiE "(closes?|fixes?|resolves?) #([0-9]+)" | grep -oE "#[0-9]+" | sed 's/#//')
+        
+        # PR 제목에서도 이슈 번호 찾기
+        TITLE_ISSUES=$(echo "$PR_TITLE" | grep -oE '#[0-9]+' | sed 's/#//')
+        
+        ALL_ISSUES="$ISSUE_NUMBERS $TITLE_ISSUES"
+        
+        for ISSUE_NUM in $ALL_ISSUES; do
+          if [ -n "$ISSUE_NUM" ]; then
+            echo "Processing issue #$ISSUE_NUM for PR"
+            
+            # 이슈 정보 가져오기
+            ISSUE_DATA=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/$ISSUE_NUM")
+            
+            ISSUE_BODY=$(echo "$ISSUE_DATA" | jq -r '.body // ""')
+            
+            # Trello 카드 ID 찾기
+            TRELLO_CARD_ID=""
+            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "Trello-Card-ID:\s*([a-zA-Z0-9]+)" | sed 's/Trello-Card-ID:\s*//')
+            
+            if [ -z "$TRELLO_CARD_ID" ]; then
+              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "trello\.com/c/([a-zA-Z0-9]+)" | sed 's/.*trello\.com\/c\///' | cut -d'/' -f1)
+            fi
+            
+            if [ -n "$TRELLO_CARD_ID" ]; then
+              echo "Moving Trello card $TRELLO_CARD_ID to Code Review"
+              
+              # 카드를 Code Review 리스트로 이동
+              curl -X PUT \
+                -H "Authorization: OAuth oauth_consumer_key=\"$TRELLO_API_KEY\", oauth_token=\"$TRELLO_TOKEN\"" \
+                "https://api.trello.com/1/cards/$TRELLO_CARD_ID?idList=$TRELLO_CODE_REVIEW_LIST_ID"
+              
+              # PR 정보를 카드에 댓글로 추가
+              COMMENT_TEXT="**Pull Request 생성됨**
+              
+              **PR**: [$PR_TITLE]($PR_URL)
+              **작성자**: ${{ github.actor }}
+              **브랜치**: ${{ github.head_ref }} → ${{ github.base_ref }}"
+              
+              curl -X POST \
+                -H "Authorization: OAuth oauth_consumer_key=\"$TRELLO_API_KEY\", oauth_token=\"$TRELLO_TOKEN\"" \
+                -H "Content-Type: application/json" \
+                -d "{\"text\":\"$COMMENT_TEXT\"}" \
+                "https://api.trello.com/1/cards/$TRELLO_CARD_ID/actions/comments"
+              
+              echo "Moved card to Code Review and added PR info"
+            fi
+          fi
+        done
+
+  # PR 머지시 Done 리스트로 이동
+  pr-to-done:
+    if: github.event.action == 'closed' && github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+    - name: Move Trello card to Done
+      env:
+        TRELLO_API_KEY: ${{ secrets.TRELLO_API_KEY }}
+        TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
+        TRELLO_DONE_LIST_ID: ${{ secrets.TRELLO_DONE_LIST_ID }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        PR_BODY="${{ github.event.pull_request.body }}"
+        PR_TITLE="${{ github.event.pull_request.title }}"
+        PR_URL="${{ github.event.pull_request.html_url }}"
+        
+        # PR에서 이슈 번호 추출
+        ISSUE_NUMBERS=$(echo "$PR_BODY" | grep -oiE "(closes?|fixes?|resolves?) #([0-9]+)" | grep -oE "#[0-9]+" | sed 's/#//')
+        TITLE_ISSUES=$(echo "$PR_TITLE" | grep -oE '#[0-9]+' | sed 's/#//')
+        
+        ALL_ISSUES="$ISSUE_NUMBERS $TITLE_ISSUES"
+        
+        for ISSUE_NUM in $ALL_ISSUES; do
+          if [ -n "$ISSUE_NUM" ]; then
+            echo "Processing issue #$ISSUE_NUM for merged PR"
+            
+            # 이슈 정보 가져오기
+            ISSUE_DATA=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/$ISSUE_NUM")
+            
+            ISSUE_BODY=$(echo "$ISSUE_DATA" | jq -r '.body // ""')
+            
+            # Trello 카드 ID 찾기
+            TRELLO_CARD_ID=""
+            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "Trello-Card-ID:\s*([a-zA-Z0-9]+)" | sed 's/Trello-Card-ID:\s*//')
+            
+            if [ -z "$TRELLO_CARD_ID" ]; then
+              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "trello\.com/c/([a-zA-Z0-9]+)" | sed 's/.*trello\.com\/c\///' | cut -d'/' -f1)
+            fi
+            
+            if [ -n "$TRELLO_CARD_ID" ]; then
+              echo "Moving Trello card $TRELLO_CARD_ID to Done"
+              
+              # 카드를 Done 리스트로 이동
+              curl -X PUT \
+                -H "Authorization: OAuth oauth_consumer_key=\"$TRELLO_API_KEY\", oauth_token=\"$TRELLO_TOKEN\"" \
+                "https://api.trello.com/1/cards/$TRELLO_CARD_ID?idList=$TRELLO_DONE_LIST_ID"
+              
+              # 완료 정보를 카드에 댓글로 추가
+              COMMENT_TEXT="✅ **Pull Request 머지 완료**
+              
+              **PR**: [$PR_TITLE]($PR_URL)
+              **머지자**: ${{ github.actor }}
+              **완료 시간**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+              
+              curl -X POST \
+                -H "Authorization: OAuth oauth_consumer_key=\"$TRELLO_API_KEY\", oauth_token=\"$TRELLO_TOKEN\"" \
+                -H "Content-Type: application/json" \
+                -d "{\"text\":\"$COMMENT_TEXT\"}" \
+                "https://api.trello.com/1/cards/$TRELLO_CARD_ID/actions/comments"
+              
+              echo "Moved card to Done and added completion info"
+            fi
+          fi
+        done

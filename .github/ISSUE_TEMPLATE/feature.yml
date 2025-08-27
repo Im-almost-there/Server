@@ -1,0 +1,39 @@
+name: Issue 
+description: 새로운 이슈 생성
+title: ""
+body:
+  - type: input
+    id: trello-card
+    attributes:
+      label: "📋 Trello 카드 연결"
+      description: "Trello 카드 URL 또는 카드 ID를 입력하세요"
+      placeholder: "https://trello.com/c/AbCdEf12/card-name 또는 AbCdEf12"
+    validations:
+      required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: "Description"
+      description: "이슈에 대한 설명 작성"
+      placeholder: "이 이슈에 대한 간단한 설명을 작성해주세요."
+    validations:
+      required: true
+
+  - type: textarea
+    id: tasks
+    attributes:
+      label: "Tasks"
+      description: "필요한 작업 작성"
+      placeholder: "구현해야 할 작업들을 체크리스트로 작성해주세요."
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: "Additional Infos"
+      description: "스크린샷, 예시, 레퍼런스 등"
+      placeholder: 스크린샷, 예시, 레퍼런스 링크 등을 첨부해주세요.
+    validations:
+      required: false

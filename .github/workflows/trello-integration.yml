@@ -138,41 +138,52 @@ jobs:
             
             # Trello 카드 ID 찾기 (여러 패턴 지원)
             TRELLO_CARD_ID=""
-            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "Trello-Card-ID:\s*([a-zA-Z0-9]+)" | sed 's/Trello-Card-ID:\s*//')
+            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "Trello-Card-ID:\\s*([a-zA-Z0-9]+)" | sed 's/Trello-Card-ID:\\s*//')
             
             if [ -z "$TRELLO_CARD_ID" ]; then
-              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "trello\.com/c/([a-zA-Z0-9]+)" | sed 's/.*trello\.com\/c\///' | cut -d'/' -f1)
+              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "trello\\.com/c/([a-zA-Z0-9]+)" | sed 's/.*trello\\.com\\/c\\///' | cut -d'/' -f1)
             fi
             
-            # 템플릿 형식에서 추출
             if [ -z "$TRELLO_CARD_ID" ]; then
-              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -A2 "📋 Trello 카드" | grep -oE "([a-zA-Z0-9]{24}|trello\.com/c/[a-zA-Z0-9]+)" | sed 's/.*trello\.com\/c\///' | cut -d'/' -f1)
+              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -A2 "📋 Trello 카드" | grep -oE "([a-zA-Z0-9]{24}|trello\\.com/c/[a-zA-Z0-9]+)" | sed 's/.*trello\\.com\\/c\\///' | cut -d'/' -f1)
             fi
             
-            # 단순 ID 패턴
             if [ -z "$TRELLO_CARD_ID" ]; then
-              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "\b[a-zA-Z0-9]{24}\b" | head -1)
+              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "\\b[a-zA-Z0-9]{24}\\b" | head -1)
             fi
-            
+
+            # 카드 ID 추출 결과 출력 추가
+            echo "Found Trello Card ID: $TRELLO_CARD_ID"
+
             if [ -n "$TRELLO_CARD_ID" ]; then
               echo "Moving Trello card $TRELLO_CARD_ID to Code Review"
               
-              # 카드를 Code Review 리스트로 이동
-              curl -X PUT \
-                "https://api.trello.com/1/cards/$TRELLO_CARD_ID?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN&idList=$TRELLO_CODE_REVIEW_LIST_ID"
+              # 카드 이동 API 호출 및 응답 저장
+              RESPONSE=$(curl -s -w "\n%{http_code}" -X PUT \
+                "https://api.trello.com/1/cards/$TRELLO_CARD_ID?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN&idList=$TRELLO_CODE_REVIEW_LIST_ID")
               
-              # PR 정보를 카드에 댓글로 추가
+              HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+              RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
+
+              # API 호출 결과 출력 추가
+              echo "Move card response code: $HTTP_CODE"
+              echo "Move card response body: $RESPONSE_BODY"
+
+              # PR 정보 카드에 댓글로 추가
               COMMENT_TEXT="PR: $PR_URL"
               
               curl -X POST \
                 -H "Content-Type: application/json" \
                 "https://api.trello.com/1/cards/$TRELLO_CARD_ID/actions/comments?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN" \
                 -d "{\"text\":\"$COMMENT_TEXT\"}"
-              
+
               echo "Moved card to Code Review and added PR info"
+            else
+              echo "No Trello Card ID found in issue #$ISSUE_NUM"
             fi
           fi
         done
+
 
   # 4. PR 머지시 Done 리스트로 이동
   pr-to-done:
@@ -221,21 +232,25 @@ jobs:
             
             # Trello 카드 ID 찾기 (여러 패턴 지원)
             TRELLO_CARD_ID=""
-            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "Trello-Card-ID:\s*([a-zA-Z0-9]+)" | sed 's/Trello-Card-ID:\s*//')
-            
+
+            # 패턴 1: Trello-Card-ID: 12345678 (공백 부분 POSIX 문자 클래스로 수정)
+            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "Trello-Card-ID:[[:space:]]*([a-zA-Z0-9]+)" | sed 's/Trello-Card-ID:[[:space:]]*//')
+
+            # 패턴 2: 링크에서 카드 ID 추출 (과도한 이스케이프 제거)
             if [ -z "$TRELLO_CARD_ID" ]; then
               TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "trello\.com/c/([a-zA-Z0-9]+)" | sed 's/.*trello\.com\/c\///' | cut -d'/' -f1)
             fi
-            
-            # 템플릿 형식에서 추출
+
+            # 패턴 3: 템플릿 필드에서 카드 ID 추출 (이스케이프 제거)
             if [ -z "$TRELLO_CARD_ID" ]; then
-              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -A2 "📋 Trello 카드" | grep -oE "([a-zA-Z0-9]{24}|trello\.com/c/[a-zA-Z0-9]+)" | sed 's/.*trello\.com\/c\///' | cut -d'/' -f1)
+              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -A5 "📋 Trello 카드 연결" | grep -oE "[a-zA-Z0-9]{8,24}" | head -1)
             fi
-            
-            # 단순 ID 패턴
+
+            # 패턴 4: 단순 8자리 또는 24자리 카드 ID 추출
             if [ -z "$TRELLO_CARD_ID" ]; then
-              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "\b[a-zA-Z0-9]{24}\b" | head -1)
+              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "[a-zA-Z0-9]{8}|[a-zA-Z0-9]{24}" | head -1)
             fi
+
             
             if [ -n "$TRELLO_CARD_ID" ]; then
               echo "Moving Trello card $TRELLO_CARD_ID to Done"

@@ -36,15 +36,7 @@ jobs:
           ISSUE_BODY=$(echo "$ISSUE_DATA" | jq -r '.body // ""')
 
           TRELLO_CARD_ID=""
-          TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "Trello-Card-ID:[[:space:]]*([a-zA-Z0-9]+)" | sed 's/Trello-Card-ID:[[:space:]]*//')
-          
-          if [ -z "$TRELLO_CARD_ID" ]; then
-            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "trello\.com/c/([a-zA-Z0-9]+)" | sed 's/.*trello\.com\/c\///' | cut -d'/' -f1)
-          fi
-          
-          if [ -z "$TRELLO_CARD_ID" ]; then
-            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -A5 "📋 Trello 카드 연결" | grep -oE "[a-zA-Z0-9]{8,24}" | head -1)
-          fi
+          TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -A5 "📋 Trello 카드 연결" | grep -oE "[a-zA-Z0-9]{8,24}" | head -1)
           
           if [ -z "$TRELLO_CARD_ID" ]; then
             TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "[a-zA-Z0-9]{8}|[a-zA-Z0-9]{24}" | head -1)
@@ -57,9 +49,7 @@ jobs:
             echo "Found Trello Card ID: $TRELLO_CARD_ID"
             
             COMMIT_URL="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
-
             COMMENT_TEXT="커밋: $COMMIT_URL"
-
             echo "Calling Trello API with card ID: $TRELLO_CARD_ID"
 
             RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
@@ -104,7 +94,6 @@ jobs:
         echo "PR Body: $PR_BODY"
         
         ISSUE_NUMBERS=$(echo "$PR_BODY" | grep -oiE "(closes?|fixes?|resolves?) #([0-9]+)" | grep -oE "#[0-9]+" | sed 's/#//')
-        
         TITLE_ISSUES=$(echo "$PR_TITLE" | grep -oE '#[0-9]+' | sed 's/#//')
         
         ALL_ISSUES="$ISSUE_NUMBERS $TITLE_ISSUES"
@@ -119,15 +108,7 @@ jobs:
             ISSUE_BODY=$(echo "$ISSUE_DATA" | jq -r '.body // ""')
 
             TRELLO_CARD_ID=""
-            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "Trello-Card-ID:[[:space:]]*([a-zA-Z0-9]+)" | sed 's/Trello-Card-ID:[[:space:]]*//')
-            
-            if [ -z "$TRELLO_CARD_ID" ]; then
-              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "trello\.com/c/([a-zA-Z0-9]+)" | sed 's/.*trello\.com\/c\///' | cut -d'/' -f1)
-            fi
-            
-            if [ -z "$TRELLO_CARD_ID" ]; then
-              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -A5 "📋 Trello 카드 연결" | grep -oE "[a-zA-Z0-9]{8,24}" | head -1)
-            fi
+            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -A5 "📋 Trello 카드 연결" | grep -oE "[a-zA-Z0-9]{8,24}" | head -1)
             
             if [ -z "$TRELLO_CARD_ID" ]; then
               TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "[a-zA-Z0-9]{8}|[a-zA-Z0-9]{24}" | head -1)
@@ -203,18 +184,10 @@ jobs:
             echo "Issue body preview: $(echo "$ISSUE_BODY" | head -c 100)..."
 
             TRELLO_CARD_ID=""
-            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "Trello-Card-ID:[[:space:]]*([a-zA-Z0-9]+)" | sed 's/Trello-Card-ID:[[:space:]]*//')
+            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -A5 "📋 Trello 카드 연결" | grep -oE "[a-zA-Z0-9]{8,24}" | head -1)
 
             if [ -z "$TRELLO_CARD_ID" ]; then
-              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "trello\.com/c/([a-zA-Z0-9]+)" | sed 's/.*trello\.com\/c\///' | cut -d'/' -f1)
-            fi
-
-            if [ -z "$TRELLO_CARD_ID" ]; then
-              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -A2 "📋 Trello 카드" | grep -oE "[a-zA-Z0-9]{8,24}" | head -1)
-            fi
-
-            if [ -z "$TRELLO_CARD_ID" ]; then
-              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "[a-zA-Z0-9]{24}" | head -1)
+              TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "[a-zA-Z0-9]{8}|[a-zA-Z0-9]{24}" | head -1)
             fi
 
             if [ -n "$TRELLO_CARD_ID" ]; then

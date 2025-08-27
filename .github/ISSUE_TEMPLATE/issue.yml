@@ -1,4 +1,4 @@
-name: Issue 
+name: Issue 템플릿
 description: 새로운 이슈 생성
 body:
   - type: input

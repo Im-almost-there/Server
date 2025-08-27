@@ -1,6 +1,5 @@
-name: Issue 
+name: Issue 템플릿
 description: 새로운 이슈 생성
-title: ""
 body:
   - type: input
     id: trello-card
@@ -34,6 +33,6 @@ body:
     attributes:
       label: "Additional Infos"
       description: "스크린샷, 예시, 레퍼런스 등"
-      placeholder: 스크린샷, 예시, 레퍼런스 링크 등을 첨부해주세요.
+      placeholder: "스크린샷, 예시, 레퍼런스 링크 등을 첨부해주세요."
     validations:
       required: false

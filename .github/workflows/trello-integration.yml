@@ -73,20 +73,26 @@ jobs:
             COMMIT_SHORT_SHA="${{ github.sha }}"
             COMMIT_SHORT_SHA="${COMMIT_SHORT_SHA:0:7}"
             
-            COMMENT_TEXT="🔧 **커밋 연결됨**
+            # 커밋 메시지를 한 줄로 변환 (줄바꿈 제거)
+            COMMIT_MSG_ONELINE=$(echo "$COMMIT_MSG" | tr '\n' ' ' | sed 's/  */ /g' | sed 's/^ *//;s/ *$//')
             
+            COMMENT_TEXT="🔧 **커밋 연결됨**
+
             **커밋**: [\`$COMMIT_SHORT_SHA\`]($COMMIT_URL)
-            **메시지**: $COMMIT_MSG
+            **메시지**: $COMMIT_MSG_ONELINE
             **브랜치**: ${{ github.ref_name }}
             **작성자**: ${{ github.actor }}"
             
             echo "Calling Trello API with card ID: $TRELLO_CARD_ID"
             echo "API URL: https://api.trello.com/1/cards/$TRELLO_CARD_ID/actions/comments?key=***&token=***"
             
+            # JSON 이스케이프 처리
+            ESCAPED_COMMENT=$(echo "$COMMENT_TEXT" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
+            
             RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
               -H "Content-Type: application/json" \
               "https://api.trello.com/1/cards/$TRELLO_CARD_ID/actions/comments?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN" \
-              -d "{\"text\":\"$COMMENT_TEXT\"}")
+              -d "{\"text\":\"$ESCAPED_COMMENT\"}")
             
             HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
             RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)

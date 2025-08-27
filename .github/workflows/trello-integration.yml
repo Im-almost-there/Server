@@ -1,3 +1,4 @@
+# .github/workflows/trello-integration.yml
 name: Trello Integration
 
 on:
@@ -51,15 +52,18 @@ jobs:
             TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "trello\.com/c/([a-zA-Z0-9]+)" | sed 's/.*trello\.com\/c\///' | cut -d'/' -f1)
           fi
           
-          # 패턴 3: 템플릿 형식 (📋 Trello 카드 연결 섹션)
+          # 패턴 3: 템플릿의 📋 Trello 카드 연결 필드에서 8자리 또는 24자리 ID 찾기
           if [ -z "$TRELLO_CARD_ID" ]; then
-            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -A2 "📋 Trello 카드" | grep -oE "([a-zA-Z0-9]{24}|trello\.com/c/[a-zA-Z0-9]+)" | sed 's/.*trello\.com\/c\///' | cut -d'/' -f1)
+            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -A5 "📋 Trello 카드 연결" | grep -oE "\b[a-zA-Z0-9]{8,24}\b" | head -1)
           fi
           
-          # 패턴 4: 단순히 24자리 Trello ID만 있는 경우
+          # 패턴 4: 단순히 8자리 shortLink 또는 24자리 ID만 있는 경우
           if [ -z "$TRELLO_CARD_ID" ]; then
-            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "\b[a-zA-Z0-9]{24}\b" | head -1)
+            TRELLO_CARD_ID=$(echo "$ISSUE_BODY" | grep -oE "\b[a-zA-Z0-9]{8}\b|\b[a-zA-Z0-9]{24}\b" | head -1)
           fi
+          
+          echo "Debug - Issue body excerpt:"
+          echo "$ISSUE_BODY" | head -10
           
           if [ -n "$TRELLO_CARD_ID" ]; then
             echo "Found Trello Card ID: $TRELLO_CARD_ID"

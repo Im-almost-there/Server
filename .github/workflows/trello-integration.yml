@@ -84,7 +84,6 @@ jobs:
           fi
         done
 
-
   # 3. PR 생성시 Code Review 리스트로 이동
   pr-to-review:
     if: github.event.action == 'opened'
